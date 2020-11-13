@@ -1,0 +1,10 @@
+[service]
+port = 44143
+
+[database]
+host = "localhost"
+port = 31222
+username = "sys"
+password = "Oradoc_db1"
+service_name = "ORCL.local"
+param = "PROTOCAL=TCP&as=sysdba"
