@@ -21,12 +21,12 @@ var (
 )
 
 type DatabaseInfo struct {
-	Host        string `json:"host"`
-	Port        int    `json:"port"`
-	Username    string `json:"username"`
-	Password    string `json:"password"`
-	ServiceName string `json:"service_name"`
-	Param       string `json:"param"`
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	DbName   string `json:"db_name"`
+	Param    string `json:"param"`
 }
 
 type RecordDef struct {
@@ -62,20 +62,37 @@ func NewWriter() *Writer {
 
 func (writer *Writer) Init() error {
 
+	// Initialize data
+	service_name := viper.GetString("database.service_name")
+	sid := viper.GetString("database.sid")
+	if service_name != "" && sid != "" {
+		log.Error("Only one of service_name or sid can be used")
+		return nil
+	}
+
+	dbname := ""
+	if service_name != "" {
+		dbname = service_name
+	}
+
+	if sid != "" {
+		dbname = sid
+	}
+
 	// Read configuration file
 	writer.dbInfo.Host = viper.GetString("database.host")
 	writer.dbInfo.Port = viper.GetInt("database.port")
 	writer.dbInfo.Username = viper.GetString("database.username")
 	writer.dbInfo.Password = viper.GetString("database.password")
-	writer.dbInfo.ServiceName = viper.GetString("database.service_name")
+	writer.dbInfo.DbName = dbname
 	writer.dbInfo.Param = viper.GetString("database.param")
 
 	log.WithFields(log.Fields{
-		"host":         writer.dbInfo.Host,
-		"port":         writer.dbInfo.Port,
-		"username":     writer.dbInfo.Username,
-		"service_name": writer.dbInfo.ServiceName,
-		"param":        writer.dbInfo.Param,
+		"host":     writer.dbInfo.Host,
+		"port":     writer.dbInfo.Port,
+		"username": writer.dbInfo.Username,
+		"dbname":   writer.dbInfo.DbName,
+		"param":    writer.dbInfo.Param,
 	}).Info("Connecting to database")
 
 	connStr := fmt.Sprintf(
@@ -84,7 +101,7 @@ func (writer *Writer) Init() error {
 		writer.dbInfo.Password,
 		writer.dbInfo.Host,
 		writer.dbInfo.Port,
-		writer.dbInfo.ServiceName,
+		writer.dbInfo.DbName,
 		writer.dbInfo.Param,
 	)
 
