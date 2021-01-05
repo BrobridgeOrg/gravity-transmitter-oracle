@@ -12,7 +12,7 @@ import (
 func init() {
 
 	// From the environment
-	viper.SetEnvPrefix("GRAVITY_TRANSMITTER_POSTGRES")
+	viper.SetEnvPrefix("GRAVITY_TRANSMITTER_ORACLE")
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
 

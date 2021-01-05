@@ -2,7 +2,9 @@ package writer
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -158,7 +160,7 @@ func (writer *Writer) GetValue(value *transmitter.Value) interface{} {
 
 	switch value.Type {
 	case transmitter.DataType_FLOAT64:
-		return float64(binary.LittleEndian.Uint64(value.Value))
+		return math.Float64frombits(binary.LittleEndian.Uint64(value.Value))
 	case transmitter.DataType_INT64:
 		return int64(binary.LittleEndian.Uint64(value.Value))
 	case transmitter.DataType_UINT64:
@@ -173,7 +175,7 @@ func (writer *Writer) GetValue(value *transmitter.Value) interface{} {
 	return value.Value
 }
 
-func (writer *Writer) GetDefinition(record *transmitter.Record) *RecordDef {
+func (writer *Writer) GetDefinition(record *transmitter.Record) (*RecordDef, error) {
 
 	recordDef := &RecordDef{
 		HasPrimary: false,
@@ -187,7 +189,8 @@ func (writer *Writer) GetDefinition(record *transmitter.Record) *RecordDef {
 		value := writer.GetValue(field.Value)
 
 		// Primary key
-		if field.IsPrimary == true {
+		//		if field.IsPrimary == true {
+		if record.PrimaryKey == field.Name {
 			recordDef.Values["primary_val"] = value
 			recordDef.HasPrimary = true
 			recordDef.PrimaryColumn = field.Name
@@ -206,26 +209,40 @@ func (writer *Writer) GetDefinition(record *transmitter.Record) *RecordDef {
 		})
 	}
 
-	return recordDef
+	if len(record.PrimaryKey) > 0 && !recordDef.HasPrimary {
+		log.WithFields(log.Fields{
+			"column": record.PrimaryKey,
+		}).Error("Not found primary key")
+
+		return nil, errors.New("Not found primary key")
+	}
+
+	return recordDef, nil
 }
 
 func (writer *Writer) InsertRecord(record *transmitter.Record) error {
 
-	recordDef := writer.GetDefinition(record)
+	recordDef, err := writer.GetDefinition(record)
+	if err != nil {
+		return err
+	}
 
 	return writer.insert(record.Table, recordDef)
 }
 
 func (writer *Writer) UpdateRecord(record *transmitter.Record) error {
 
-	recordDef := writer.GetDefinition(record)
+	recordDef, err := writer.GetDefinition(record)
+	if err != nil {
+		return err
+	}
 
 	// Ignore if no primary key
 	if recordDef.HasPrimary == false {
 		return nil
 	}
 
-	_, err := writer.update(record.Table, recordDef)
+	_, err = writer.update(record.Table, recordDef)
 	if err != nil {
 		return err
 	}
@@ -235,10 +252,16 @@ func (writer *Writer) UpdateRecord(record *transmitter.Record) error {
 
 func (writer *Writer) DeleteRecord(record *transmitter.Record) error {
 
+	if record.PrimaryKey == "" {
+		// Do nothing
+		return nil
+	}
+
 	for _, field := range record.Fields {
 
 		// Primary key
-		if field.IsPrimary == true {
+		//		if field.IsPrimary == true {
+		if record.PrimaryKey == field.Name {
 
 			value := writer.GetValue(field.Value)
 
@@ -263,7 +286,7 @@ func (writer *Writer) update(table string, recordDef *RecordDef) (bool, error) {
 	// Preparing SQL string
 	updates := make([]string, 0, len(recordDef.ColumnDefs))
 	for _, def := range recordDef.ColumnDefs {
-		updates = append(updates, def.ColumnName+` = :`+def.BindingName)
+		updates = append(updates, "\""+def.ColumnName+"\" = :"+def.BindingName)
 	}
 
 	updateStr := strings.Join(updates, ",")
@@ -279,17 +302,23 @@ func (writer *Writer) update(table string, recordDef *RecordDef) (bool, error) {
 
 func (writer *Writer) insert(table string, recordDef *RecordDef) error {
 
-	paramLength := len(recordDef.ColumnDefs) + 1
+	paramLength := len(recordDef.ColumnDefs)
+	if recordDef.HasPrimary {
+		paramLength++
+	}
 
 	// Allocation
 	colNames := make([]string, 0, paramLength)
-	colNames = append(colNames, recordDef.PrimaryColumn)
 	valNames := make([]string, 0, paramLength)
-	valNames = append(valNames, ":primary_val")
+
+	if recordDef.HasPrimary {
+		colNames = append(colNames, `"`+recordDef.PrimaryColumn+`"`)
+		valNames = append(valNames, ":primary_val")
+	}
 
 	// Preparing columns and bindings
 	for _, def := range recordDef.ColumnDefs {
-		colNames = append(colNames, def.ColumnName)
+		colNames = append(colNames, `"`+def.ColumnName+`"`)
 		valNames = append(valNames, `:`+def.BindingName)
 	}
 

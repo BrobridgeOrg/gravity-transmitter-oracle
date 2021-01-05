@@ -3,10 +3,11 @@ port = 44143
 
 [database]
 host = "localhost"
-port = 31222
+port = 1521
 username = "sys"
 password = "Oradoc_db1"
 # Only one of service_name or sid can be used
-service_name = "ORCL.local"
+service_name = "orcl"
 sid = ""
-param = "PROTOCAL=TCP&as=sysdba"
+# param = "PROTOCAL=TCP&as=sysdba"
+param = ""
