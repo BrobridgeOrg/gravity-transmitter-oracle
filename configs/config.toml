@@ -2,12 +2,16 @@
 port = 44143
 
 [database]
-host = "localhost"
+host = "192.168.1.111"
 port = 1521
-username = "sys"
-password = "Oradoc_db1"
+username = "gravity"
+password = "gravity"
 # Only one of service_name or sid can be used
 service_name = "orcl"
 sid = ""
 # param = "PROTOCAL=TCP&as=sysdba"
 param = ""
+
+[config]
+max_batch_size = 1000
+batch_timeout = 5000    # Millisecond

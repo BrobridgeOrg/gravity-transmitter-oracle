@@ -7,10 +7,10 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 
 	transmitter "github.com/BrobridgeOrg/gravity-api/service/transmitter"
 	"github.com/jmoiron/sqlx"
-	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-oci8"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -50,15 +50,17 @@ type DBCommand struct {
 }
 
 type Writer struct {
-	dbInfo   *DatabaseInfo
-	db       *sqlx.DB
-	commands chan *DBCommand
+	dbInfo    *DatabaseInfo
+	db        *sqlx.DB
+	batchSize int
+	timeout   time.Duration
+	commands  chan *DBCommand
 }
 
 func NewWriter() *Writer {
 	return &Writer{
 		dbInfo:   &DatabaseInfo{},
-		commands: make(chan *DBCommand, 2048),
+		commands: make(chan *DBCommand, 204800),
 	}
 }
 
@@ -119,30 +121,64 @@ func (writer *Writer) Init() error {
 
 	writer.db = db
 
-	go writer.run()
+	writer.batchSize = viper.GetInt("config.max_batch_size")
+	writer.timeout = viper.GetDuration("config.batch_timeout")
 
+	for i := 0; i < 5; i++ {
+		go writer.run()
+	}
 	return nil
 }
 
 func (writer *Writer) run() {
+
+	var tx *sqlx.Tx
+	batch := 0
+	timer := time.NewTimer(0 * time.Millisecond)
+
 	for {
 		select {
 		case cmd := <-writer.commands:
-			_, err := writer.db.NamedExec(cmd.QueryStr, cmd.Args)
+
+			if batch == 0 {
+				tx = writer.db.MustBegin()
+			}
+			timer = time.NewTimer(writer.timeout * time.Millisecond)
+
+			_, err := tx.NamedExec(cmd.QueryStr, cmd.Args)
 			if err != nil {
 				log.Error(err)
+			}
+
+			batch++
+
+			if batch >= writer.batchSize {
+				timer.Stop()
+				err := tx.Commit()
+				if err != nil {
+					log.Error(err)
+				}
+
+				log.Info("Processing batch of ", batch)
+				batch = 0
+			}
+
+		case <-timer.C:
+			if batch > 0 {
+				timer.Stop()
+				err := tx.Commit()
+				if err != nil {
+					log.Error(err)
+				}
+
+				log.Info("Processing batch of ", batch)
+				batch = 0
 			}
 		}
 	}
 }
 
 func (writer *Writer) ProcessData(record *transmitter.Record) error {
-
-	log.WithFields(log.Fields{
-		"method": record.Method,
-		"event":  record.EventName,
-		"table":  record.Table,
-	}).Info("Write record")
 
 	switch record.Method {
 	case transmitter.Method_DELETE:
@@ -301,7 +337,6 @@ func (writer *Writer) update(table string, recordDef *RecordDef) (bool, error) {
 }
 
 func (writer *Writer) insert(table string, recordDef *RecordDef) error {
-
 	paramLength := len(recordDef.ColumnDefs)
 	if recordDef.HasPrimary {
 		paramLength++
@@ -326,8 +361,8 @@ func (writer *Writer) insert(table string, recordDef *RecordDef) error {
 	colsStr := strings.Join(colNames, ",")
 	valsStr := strings.Join(valNames, ",")
 	insertStr := fmt.Sprintf(InsertTemplate, table, colsStr, valsStr)
-
 	//	database.db.NamedExec(insertStr, recordDef.Values)
+
 	writer.commands <- &DBCommand{
 		QueryStr: insertStr,
 		Args:     recordDef.Values,
