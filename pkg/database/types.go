@@ -1,11 +1,11 @@
 package database
 
 import (
-	transmitter "github.com/BrobridgeOrg/gravity-api/service/transmitter"
+	gravity_sdk_types_record "github.com/BrobridgeOrg/gravity-sdk/types/record"
 )
 
 type Writer interface {
 	Init() error
-	ProcessData(*transmitter.Record) error
+	ProcessData(*gravity_sdk_types_record.Record) error
 	Truncate(string) error
 }

@@ -1,5 +1,14 @@
-[service]
-port = 44143
+[gravity]
+host = "0.0.0.0:32803"
+
+[subscriber]
+subscriber_id = "oracle_transmitter"
+subscriber_name = "Oracle Transmitter"
+state_store = "./statestore"
+worker_count = 16
+
+[rules]
+subscription = "./settings/subscriptions.json"
 
 [database]
 host = "192.168.1.111"
@@ -14,4 +23,4 @@ param = ""
 
 [config]
 max_batch_size = 1000
-batch_timeout = 5000    # Millisecond
+batch_timeout = 300    # Millisecond
