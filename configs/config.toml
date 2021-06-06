@@ -20,7 +20,3 @@ service_name = "orcl"
 sid = ""
 # param = "PROTOCAL=TCP&as=sysdba"
 param = ""
-
-[config]
-max_batch_size = 1000
-batch_timeout = 300    # Millisecond

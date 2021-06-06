@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	gravity_sdk_types_record "github.com/BrobridgeOrg/gravity-sdk/types/record"
 	"github.com/jmoiron/sqlx"
@@ -48,11 +47,9 @@ type DBCommand struct {
 }
 
 type Writer struct {
-	dbInfo    *DatabaseInfo
-	db        *sqlx.DB
-	batchSize int
-	timeout   time.Duration
-	commands  chan *DBCommand
+	dbInfo   *DatabaseInfo
+	db       *sqlx.DB
+	commands chan *DBCommand
 }
 
 func NewWriter() *Writer {
@@ -119,58 +116,42 @@ func (writer *Writer) Init() error {
 
 	writer.db = db
 
-	writer.batchSize = viper.GetInt("config.max_batch_size")
-	writer.timeout = viper.GetDuration("config.batch_timeout")
+	if err = writer.setTimeFormatOnSession(); err != nil {
+		log.Error(err)
+		return err
 
-	for i := 0; i < 5; i++ {
-		go writer.run()
 	}
+
+	go writer.run()
+	return nil
+}
+
+func (writer *Writer) setTimeFormatOnSession() error {
+
+	sqlStr := fmt.Sprintf(`ALTER SESSION SET NLS_DATE_FORMAT='yyyy-mm-dd hh24:mi:ss'`)
+	_, err := writer.db.Exec(sqlStr)
+	if err != nil {
+		return err
+	}
+
+	sqlStr = fmt.Sprintf(`ALTER SESSION SET NLS_TIMESTAMP_FORMAT='yyyy-mm-dd hh24:mi:ss.ff'`)
+	_, err = writer.db.Exec(sqlStr)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func (writer *Writer) run() {
 
-	var tx *sqlx.Tx
-	batch := 0
-	timer := time.NewTimer(0 * time.Millisecond)
-
 	for {
 		select {
 		case cmd := <-writer.commands:
 
-			if batch == 0 {
-				tx = writer.db.MustBegin()
-			}
-			timer = time.NewTimer(writer.timeout * time.Millisecond)
-
-			_, err := tx.NamedExec(cmd.QueryStr, cmd.Args)
+			_, err := writer.db.NamedExec(cmd.QueryStr, cmd.Args)
 			if err != nil {
 				log.Error(err)
-			}
-
-			batch++
-
-			if batch >= writer.batchSize {
-				timer.Stop()
-				err := tx.Commit()
-				if err != nil {
-					log.Error(err)
-				}
-
-				log.Info("Processing batch of ", batch)
-				batch = 0
-			}
-
-		case <-timer.C:
-			if batch > 0 {
-				timer.Stop()
-				err := tx.Commit()
-				if err != nil {
-					log.Error(err)
-				}
-
-				log.Info("Processing batch of ", batch)
-				batch = 0
 			}
 		}
 	}
