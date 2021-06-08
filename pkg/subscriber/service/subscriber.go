@@ -5,14 +5,15 @@ import (
 	"io/ioutil"
 	"os"
 	"sync"
-	"time"
 
 	"github.com/BrobridgeOrg/gravity-sdk/core"
 	gravity_subscriber "github.com/BrobridgeOrg/gravity-sdk/subscriber"
 	gravity_state_store "github.com/BrobridgeOrg/gravity-sdk/subscriber/state_store"
 	gravity_sdk_types_projection "github.com/BrobridgeOrg/gravity-sdk/types/projection"
 	gravity_sdk_types_record "github.com/BrobridgeOrg/gravity-sdk/types/record"
+	gravity_sdk_types_snapshot_record "github.com/BrobridgeOrg/gravity-sdk/types/snapshot_record"
 	"github.com/BrobridgeOrg/gravity-transmitter-oracle/pkg/app"
+	"github.com/BrobridgeOrg/gravity-transmitter-oracle/pkg/database"
 	"github.com/jinzhu/copier"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -51,8 +52,11 @@ func (subscriber *Subscriber) processData(msg *gravity_subscriber.Message) error
 	// Getting tables for specific collection
 	tables, ok := subscriber.ruleConfig.Subscriptions[pj.Collection]
 	if !ok {
-		return err
+		// skip
+		return nil
 	}
+
+	//	log.Info(string(msg.Event.Data))
 
 	// Convert projection to record
 	record, err := pj.ToRecord()
@@ -69,12 +73,12 @@ func (subscriber *Subscriber) processData(msg *gravity_subscriber.Message) error
 
 		// TODO: using batch mechanism to improve performance
 		for {
-			err := writer.ProcessData(&rs)
+			err := writer.ProcessData(msg, &rs)
 			if err == nil {
 				break
 			}
 
-			<-time.After(time.Second * 5)
+			log.Error(err)
 		}
 	}
 
@@ -122,6 +126,15 @@ func (subscriber *Subscriber) Init() error {
 		return err
 	}
 
+	// Initializing writer
+	writer := subscriber.app.GetWriter()
+	writer.SetCompletionHandler(func(cmd database.DBCommand) {
+		// Ack after writing to database
+		ref := cmd.GetReference()
+		msg := ref.(*gravity_subscriber.Message)
+		msg.Ack()
+	})
+
 	host := viper.GetString("gravity.host")
 
 	log.WithFields(log.Fields{
@@ -131,9 +144,11 @@ func (subscriber *Subscriber) Init() error {
 	// Initializing gravity subscriber and connecting to server
 	viper.SetDefault("subscriber.worker_count", 4)
 	options := gravity_subscriber.NewOptions()
-	options.Verbose = false
+	options.Verbose = viper.GetBool("subscriber.verbose")
 	options.StateStore = subscriber.stateStore
 	options.WorkerCount = viper.GetInt("subscriber.worker_count")
+	options.InitialLoad.Enabled = viper.GetBool("initial_load.enabled")
+	options.InitialLoad.OmittedCount = viper.GetUint64("initial_load.omitted_count")
 
 	subscriber.subscriber = gravity_subscriber.NewSubscriber(options)
 	opts := core.NewOptions()
@@ -141,6 +156,10 @@ func (subscriber *Subscriber) Init() error {
 	if err != nil {
 		return err
 	}
+
+	// Setup data handler
+	subscriber.subscriber.SetEventHandler(subscriber.eventHandler)
+	subscriber.subscriber.SetSnapshotHandler(subscriber.snapshotHandler)
 
 	// Register subscriber
 	log.Info("Registering subscriber")
@@ -166,23 +185,62 @@ func (subscriber *Subscriber) Init() error {
 	return nil
 }
 
-func (subscriber *Subscriber) Run() error {
+func (subscriber *Subscriber) eventHandler(msg *gravity_subscriber.Message) {
 
-	log.WithFields(log.Fields{}).Info("Starting to fetch data from gravity...")
-	_, err := subscriber.subscriber.Subscribe(func(msg *gravity_subscriber.Message) {
-
-		err := subscriber.processData(msg)
-		if err != nil {
-			log.Error(err)
-			return
-		}
-
-		msg.Ack()
-	})
+	err := subscriber.processData(msg)
 	if err != nil {
 		log.Error(err)
-		return err
+		return
 	}
+}
+
+func (subscriber *Subscriber) snapshotHandler(msg *gravity_subscriber.Message) {
+
+	// Parsing snapshot record
+	var snapshotRecord gravity_sdk_types_snapshot_record.SnapshotRecord
+	err := gravity_sdk_types_snapshot_record.Unmarshal(msg.Snapshot.Data, &snapshotRecord)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+
+	// Getting tables for specific collection
+	tables, ok := subscriber.ruleConfig.Subscriptions[msg.Snapshot.Collection]
+	if !ok {
+		return
+	}
+
+	// Prepare record for database writer
+	var record gravity_sdk_types_record.Record
+	record.Method = gravity_sdk_types_record.Method_INSERT
+	err = gravity_sdk_types_record.UnmarshalMapData(snapshotRecord.Payload, &record)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+
+	// Save record to each table
+	writer := subscriber.app.GetWriter()
+	for _, tableName := range tables {
+		var rs gravity_sdk_types_record.Record
+		copier.Copy(&rs, record)
+		rs.Table = tableName
+
+		// TODO: using batch mechanism to improve performance
+		for {
+			err := writer.ProcessData(msg, &rs)
+			if err == nil {
+				break
+			}
+
+			log.Error(err)
+		}
+	}
+}
+
+func (subscriber *Subscriber) Run() error {
+
+	subscriber.subscriber.Start()
 
 	return nil
 }

@@ -6,6 +6,13 @@ subscriber_id = "oracle_transmitter"
 subscriber_name = "Oracle Transmitter"
 state_store = "./statestore"
 worker_count = 16
+verbose = true
+
+[initial_load]
+enabled = true
+omitted_count = 100000
+
+
 
 [rules]
 subscription = "./settings/subscriptions.json"

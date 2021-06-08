@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	gravity_sdk_types_record "github.com/BrobridgeOrg/gravity-sdk/types/record"
+	"github.com/BrobridgeOrg/gravity-transmitter-oracle/pkg/database"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-oci8"
 	log "github.com/sirupsen/logrus"
@@ -28,6 +30,7 @@ type DatabaseInfo struct {
 	Param    string `json:"param"`
 }
 
+/*
 type RecordDef struct {
 	HasPrimary    bool
 	PrimaryColumn string
@@ -40,22 +43,20 @@ type ColumnDef struct {
 	BindingName string
 	Value       interface{}
 }
-
-type DBCommand struct {
-	QueryStr string
-	Args     map[string]interface{}
-}
+*/
 
 type Writer struct {
-	dbInfo   *DatabaseInfo
-	db       *sqlx.DB
-	commands chan *DBCommand
+	dbInfo            *DatabaseInfo
+	db                *sqlx.DB
+	commands          chan *DBCommand
+	completionHandler database.CompletionHandler
 }
 
 func NewWriter() *Writer {
 	return &Writer{
-		dbInfo:   &DatabaseInfo{},
-		commands: make(chan *DBCommand, 204800),
+		dbInfo:            &DatabaseInfo{},
+		commands:          make(chan *DBCommand, 204800),
+		completionHandler: func(database.DBCommand) {},
 	}
 }
 
@@ -149,34 +150,57 @@ func (writer *Writer) run() {
 		select {
 		case cmd := <-writer.commands:
 
-			_, err := writer.db.NamedExec(cmd.QueryStr, cmd.Args)
-			if err != nil {
-				log.Error(err)
+			for {
+				// Write to database
+				_, err := writer.db.NamedExec(cmd.QueryStr, cmd.Args)
+				if err != nil {
+					log.Error(err)
+					log.Error(cmd.QueryStr)
+					log.Error(cmd.Args)
+
+					<-time.After(time.Second * 5)
+
+					log.WithFields(log.Fields{
+						"event_name": cmd.Record.EventName,
+						"method":     cmd.Record.Method.String(),
+						"table":      cmd.Record.Table,
+					}).Warn("Retry to write record to database...")
+
+					continue
+				}
+
+				writer.completionHandler(database.DBCommand(cmd))
+
+				break
 			}
 		}
 	}
 }
 
-func (writer *Writer) ProcessData(record *gravity_sdk_types_record.Record) error {
+func (writer *Writer) SetCompletionHandler(fn database.CompletionHandler) {
+	writer.completionHandler = fn
+}
+
+func (writer *Writer) ProcessData(reference interface{}, record *gravity_sdk_types_record.Record) error {
 
 	switch record.Method {
 	case gravity_sdk_types_record.Method_DELETE:
-		return writer.DeleteRecord(record)
+		return writer.DeleteRecord(reference, record)
 	case gravity_sdk_types_record.Method_UPDATE:
-		return writer.UpdateRecord(record)
+		return writer.UpdateRecord(reference, record)
 	case gravity_sdk_types_record.Method_INSERT:
-		return writer.InsertRecord(record)
+		return writer.InsertRecord(reference, record)
 	}
 
 	return nil
 }
 
-func (writer *Writer) GetDefinition(record *gravity_sdk_types_record.Record) (*RecordDef, error) {
+func (writer *Writer) GetDefinition(record *gravity_sdk_types_record.Record) (*gravity_sdk_types_record.RecordDef, error) {
 
-	recordDef := &RecordDef{
+	recordDef := &gravity_sdk_types_record.RecordDef{
 		HasPrimary: false,
 		Values:     make(map[string]interface{}),
-		ColumnDefs: make([]*ColumnDef, 0, len(record.Fields)),
+		ColumnDefs: make([]*gravity_sdk_types_record.ColumnDef, 0, len(record.Fields)),
 	}
 
 	// Scanning fields
@@ -198,7 +222,7 @@ func (writer *Writer) GetDefinition(record *gravity_sdk_types_record.Record) (*R
 		recordDef.Values[bindingName] = value
 
 		// Store definition
-		recordDef.ColumnDefs = append(recordDef.ColumnDefs, &ColumnDef{
+		recordDef.ColumnDefs = append(recordDef.ColumnDefs, &gravity_sdk_types_record.ColumnDef{
 			ColumnName:  field.Name,
 			Value:       field.Name,
 			BindingName: bindingName,
@@ -216,17 +240,17 @@ func (writer *Writer) GetDefinition(record *gravity_sdk_types_record.Record) (*R
 	return recordDef, nil
 }
 
-func (writer *Writer) InsertRecord(record *gravity_sdk_types_record.Record) error {
+func (writer *Writer) InsertRecord(reference interface{}, record *gravity_sdk_types_record.Record) error {
 
 	recordDef, err := writer.GetDefinition(record)
 	if err != nil {
 		return err
 	}
 
-	return writer.insert(record.Table, recordDef)
+	return writer.insert(reference, record, record.Table, recordDef)
 }
 
-func (writer *Writer) UpdateRecord(record *gravity_sdk_types_record.Record) error {
+func (writer *Writer) UpdateRecord(reference interface{}, record *gravity_sdk_types_record.Record) error {
 
 	recordDef, err := writer.GetDefinition(record)
 	if err != nil {
@@ -238,7 +262,7 @@ func (writer *Writer) UpdateRecord(record *gravity_sdk_types_record.Record) erro
 		return nil
 	}
 
-	_, err = writer.update(record.Table, recordDef)
+	_, err = writer.update(reference, record, record.Table, recordDef)
 	if err != nil {
 		return err
 	}
@@ -246,7 +270,7 @@ func (writer *Writer) UpdateRecord(record *gravity_sdk_types_record.Record) erro
 	return nil
 }
 
-func (writer *Writer) DeleteRecord(record *gravity_sdk_types_record.Record) error {
+func (writer *Writer) DeleteRecord(reference interface{}, record *gravity_sdk_types_record.Record) error {
 
 	if record.PrimaryKey == "" {
 		// Do nothing
@@ -264,7 +288,9 @@ func (writer *Writer) DeleteRecord(record *gravity_sdk_types_record.Record) erro
 			sqlStr := fmt.Sprintf(DeleteTemplate, record.Table, field.Name)
 
 			writer.commands <- &DBCommand{
-				QueryStr: sqlStr,
+				Reference: reference,
+				Record:    record,
+				QueryStr:  sqlStr,
 				Args: map[string]interface{}{
 					"primary_val": value,
 				},
@@ -277,7 +303,7 @@ func (writer *Writer) DeleteRecord(record *gravity_sdk_types_record.Record) erro
 	return nil
 }
 
-func (writer *Writer) update(table string, recordDef *RecordDef) (bool, error) {
+func (writer *Writer) update(reference interface{}, record *gravity_sdk_types_record.Record, table string, recordDef *gravity_sdk_types_record.RecordDef) (bool, error) {
 
 	// Preparing SQL string
 	updates := make([]string, 0, len(recordDef.ColumnDefs))
@@ -289,14 +315,17 @@ func (writer *Writer) update(table string, recordDef *RecordDef) (bool, error) {
 	sqlStr := fmt.Sprintf(UpdateTemplate, table, updateStr, recordDef.PrimaryColumn)
 
 	writer.commands <- &DBCommand{
-		QueryStr: sqlStr,
-		Args:     recordDef.Values,
+		Reference: reference,
+		Record:    record,
+		QueryStr:  sqlStr,
+		Args:      recordDef.Values,
 	}
 
 	return false, nil
 }
 
-func (writer *Writer) insert(table string, recordDef *RecordDef) error {
+func (writer *Writer) insert(reference interface{}, record *gravity_sdk_types_record.Record, table string, recordDef *gravity_sdk_types_record.RecordDef) error {
+
 	paramLength := len(recordDef.ColumnDefs)
 	if recordDef.HasPrimary {
 		paramLength++
@@ -324,8 +353,10 @@ func (writer *Writer) insert(table string, recordDef *RecordDef) error {
 	//	database.db.NamedExec(insertStr, recordDef.Values)
 
 	writer.commands <- &DBCommand{
-		QueryStr: insertStr,
-		Args:     recordDef.Values,
+		Reference: reference,
+		Record:    record,
+		QueryStr:  insertStr,
+		Args:      recordDef.Values,
 	}
 
 	return nil
