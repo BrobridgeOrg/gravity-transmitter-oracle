@@ -135,6 +135,9 @@ func (subscriber *Subscriber) Init() error {
 		msg.Ack()
 	})
 
+	// Initializing gravity node information
+	viper.SetDefault("gravity.domain", "gravity")
+	domain := viper.GetString("gravity.domain")
 	host := viper.GetString("gravity.host")
 
 	log.WithFields(log.Fields{
@@ -145,6 +148,7 @@ func (subscriber *Subscriber) Init() error {
 	viper.SetDefault("subscriber.worker_count", 4)
 	options := gravity_subscriber.NewOptions()
 	options.Verbose = viper.GetBool("subscriber.verbose")
+	options.Domain = domain
 	options.StateStore = subscriber.stateStore
 	options.WorkerCount = viper.GetInt("subscriber.worker_count")
 	options.InitialLoad.Enabled = viper.GetBool("initial_load.enabled")
