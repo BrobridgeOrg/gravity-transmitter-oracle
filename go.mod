@@ -3,7 +3,7 @@ module github.com/BrobridgeOrg/gravity-transmitter-oracle
 go 1.15
 
 require (
-	github.com/BrobridgeOrg/gravity-sdk v0.0.19
+	github.com/BrobridgeOrg/gravity-sdk v0.0.20
 	github.com/jinzhu/copier v0.3.2
 	github.com/jmoiron/sqlx v1.2.0
 	github.com/lib/pq v1.9.0

@@ -2,6 +2,7 @@ package subscriber
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"sync"
@@ -180,8 +181,61 @@ func (subscriber *Subscriber) Init() error {
 		return err
 	}
 
+	// Subscribe to pipelines
+	err = subscriber.initializePipelines()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (subscriber *Subscriber) initializePipelines() error {
+
+	// Subscribe to pipelines
 	log.WithFields(log.Fields{}).Info("Subscribing to gravity pipelines...")
-	err = subscriber.subscriber.AddAllPipelines()
+	viper.SetDefault("subscriber.pipeline_start", 0)
+	viper.SetDefault("subscriber.pipeline_end", -1)
+
+	pipelineStart := viper.GetInt64("subscriber.pipeline_start")
+	pipelineEnd := viper.GetInt64("subscriber.pipeline_end")
+
+	// Subscribe to all pipelines
+	if pipelineStart == 0 && pipelineEnd == -1 {
+		err := subscriber.subscriber.AddAllPipelines()
+		if err != nil {
+			return err
+		}
+
+		return nil
+	}
+
+	// Subscribe to pipelines in then range
+	if pipelineStart < 0 {
+		return fmt.Errorf("subscriber.pipeline_start should be higher than -1")
+	}
+
+	if pipelineStart > pipelineEnd {
+		if pipelineEnd != -1 {
+			return fmt.Errorf("subscriber.pipeline_start should be less than subscriber.pipeline_end")
+		}
+	}
+
+	count, err := subscriber.subscriber.GetPipelineCount()
+	if err != nil {
+		return err
+	}
+
+	if pipelineEnd == -1 {
+		pipelineEnd = int64(count) - 1
+	}
+
+	pipelines := make([]uint64, 0, pipelineEnd-pipelineStart)
+	for i := pipelineStart; i <= pipelineEnd; i++ {
+		pipelines = append(pipelines, uint64(i))
+	}
+
+	err = subscriber.subscriber.SubscribeToPipelines(pipelines)
 	if err != nil {
 		return err
 	}

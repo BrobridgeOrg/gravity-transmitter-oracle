@@ -6,8 +6,10 @@ host = "0.0.0.0:32803"
 subscriber_id = "oracle_transmitter"
 subscriber_name = "Oracle Transmitter"
 state_store = "./statestore"
-worker_count = 16
+worker_count = 4
 verbose = true
+pipeline_start = 0
+pipeline_end = -1
 
 [initial_load]
 enabled = true
