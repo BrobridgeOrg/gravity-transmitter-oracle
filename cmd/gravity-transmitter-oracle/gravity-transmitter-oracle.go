@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"os"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -10,6 +12,20 @@ import (
 )
 
 func init() {
+
+	debugLevel := log.InfoLevel
+	switch os.Getenv("GRAVITY_DEBUG") {
+	case log.TraceLevel.String():
+		debugLevel = log.TraceLevel
+	case log.DebugLevel.String():
+		debugLevel = log.DebugLevel
+	case log.ErrorLevel.String():
+		debugLevel = log.ErrorLevel
+	}
+
+	log.SetLevel(debugLevel)
+
+	fmt.Printf("Debug level is set to \"%s\"\n", debugLevel.String())
 
 	// From the environment
 	viper.SetEnvPrefix("GRAVITY_TRANSMITTER_ORACLE")
