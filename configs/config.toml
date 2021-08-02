@@ -11,6 +11,10 @@ verbose = true
 pipeline_start = 0
 pipeline_end = -1
 
+# Authentication
+appID = "anonymous"
+accessKey = ""
+
 [initial_load]
 enabled = true
 omitted_count = 100000
