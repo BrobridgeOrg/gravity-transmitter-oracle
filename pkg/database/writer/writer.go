@@ -37,8 +37,6 @@ type Writer struct {
 	commands          chan *DBCommand
 	completionHandler database.CompletionHandler
 	buffer            *buffered_input.BufferedInput
-	tmpQueryStr       string
-	handleQueryStr    string
 }
 
 func NewWriter() *Writer {
@@ -46,13 +44,11 @@ func NewWriter() *Writer {
 		dbInfo:            &DatabaseInfo{},
 		commands:          make(chan *DBCommand, 204800),
 		completionHandler: func(database.DBCommand) {},
-		tmpQueryStr:       "",
-		handleQueryStr:    "",
 	}
 
 	// Initializing buffered input
 	opts := buffered_input.NewOptions()
-	opts.ChunkSize = 100
+	opts.ChunkSize = 2000
 	opts.ChunkCount = 10000
 	opts.Timeout = 50 * time.Millisecond
 	opts.Handler = writer.chunkHandler
@@ -64,10 +60,10 @@ func NewWriter() *Writer {
 func (writer *Writer) Init() error {
 
 	// Initialize data
-	service_name := viper.GetString("database.service_name")
+	service_name := viper.GetString("database.serviceName")
 	sid := viper.GetString("database.sid")
 	if service_name != "" && sid != "" {
-		log.Error("Only one of service_name or sid can be used")
+		log.Error("Only one of serviceName or sid can be used")
 		return nil
 	}
 
@@ -131,156 +127,43 @@ func (writer *Writer) Init() error {
 func (writer *Writer) chunkHandler(chunk []interface{}) {
 
 	dbCommands := make([]*DBCommand, 0, len(chunk))
-	for i, request := range chunk {
-
+	for _, request := range chunk {
 		req := request.(*DBCommand)
-
-		if i == 0 {
-			writer.handleQueryStr = req.QueryStr
-		}
-
-		if req.QueryStr == writer.handleQueryStr {
-
-			dbCommands = append(dbCommands, req)
-
-		} else {
-
-			writer.handleQueryStr = req.QueryStr
-
-			writer.processData(dbCommands)
-
-			dbCommands = make([]*DBCommand, 0, len(chunk))
-			dbCommands = append(dbCommands, req)
-		}
-
+		dbCommands = append(dbCommands, req)
 	}
-
-	if len(dbCommands) != 0 {
-		writer.processData(dbCommands)
-	}
-}
-
-func (writer *Writer) processInsertData(cmd *DBCommand, querys []string, args []interface{}) ([]string, []interface{}) {
-
-	if writer.tmpQueryStr != cmd.QueryStr {
-		writer.tmpQueryStr = cmd.QueryStr
-		qStr, arg, _ := writer.db.BindNamed(cmd.QueryStr, cmd.Args)
-		newQueryStr := strings.Replace(qStr, "INSERT ", "INSERT ALL ", 1)
-
-		querys = append(querys, newQueryStr)
-		args = append(args, arg...)
-
-	} else {
-
-		querys, args = writer.appendInsertData(cmd, querys, args)
-	}
-
-	return querys, args
-
-}
-
-func (writer *Writer) appendInsertData(cmd *DBCommand, querys []string, args []interface{}) ([]string, []interface{}) {
-
-	qStr, arg, _ := writer.db.BindNamed(cmd.QueryStr, cmd.Args)
-
-	qStr = strings.Replace(qStr, "INSERT ", "", 1)
-	qStr = fmt.Sprintf("%v %v", querys[len(querys)-1], qStr)
-	querys[len(querys)-1] = qStr
-	args = append(args, arg...)
-
-	return querys, args
-}
-
-func (writer *Writer) processUpdateData(cmd *DBCommand, querys []string, args []interface{}) ([]string, []interface{}) {
-
-	if writer.tmpQueryStr != cmd.QueryStr {
-
-		writer.tmpQueryStr = cmd.QueryStr
-		qStr, arg, _ := writer.db.BindNamed(cmd.QueryStr, cmd.Args)
-		querys = append(querys, qStr)
-		args = append(args, arg...)
-
-	} else {
-
-		querys, args = writer.appendUpdateData(cmd, querys, args)
-	}
-
-	return querys, args
-}
-
-func (writer *Writer) appendUpdateData(cmd *DBCommand, querys []string, args []interface{}) ([]string, []interface{}) {
-
-	_, arg, _ := writer.db.BindNamed(cmd.QueryStr, cmd.Args)
-	qStr := querys[len(querys)-1]
-	qStr = fmt.Sprintf("%v;", qStr)
-	if strings.Index(qStr, ");") == -1 {
-		qStr = strings.Replace(qStr, " = :primary_val;", " IN (:primary_val, :primary_val)", 1)
-	} else {
-		qStr = strings.Replace(qStr, ");", ",:primary_val)", 1)
-	}
-
-	querys[len(querys)-1] = qStr
-	args = append(args, arg[len(arg)-1])
-
-	return querys, args
-}
-
-func (writer *Writer) processDeleteData(cmd *DBCommand, querys []string, args []interface{}) ([]string, []interface{}) {
-
-	if writer.tmpQueryStr != cmd.QueryStr {
-
-		writer.tmpQueryStr = cmd.QueryStr
-		qStr, arg, _ := writer.db.BindNamed(cmd.QueryStr, cmd.Args)
-
-		querys = append(querys, qStr)
-		args = append(args, arg...)
-
-	} else {
-
-		querys, args = writer.appendDeleteData(cmd, querys, args)
-	}
-
-	return querys, args
-
-}
-
-func (writer *Writer) appendDeleteData(cmd *DBCommand, querys []string, args []interface{}) ([]string, []interface{}) {
-
-	return writer.appendUpdateData(cmd, querys, args)
+	writer.processData(dbCommands)
 }
 
 func (writer *Writer) processData(dbCommands []*DBCommand) {
 	// Write to Database
 	for {
-		var args []interface{}
-		var querys []string
-		writer.tmpQueryStr = ""
-		for i, cmd := range dbCommands {
-
-			switch cmd.Record.Method {
-			case gravity_sdk_types_record.Method_INSERT:
-				querys, args = writer.processInsertData(cmd, querys, args)
-				if i == len(dbCommands)-1 {
-					querys[len(querys)-1] = fmt.Sprintf("%v SELECT * FROM DUAL", querys[len(querys)-1])
-				}
-
-			case gravity_sdk_types_record.Method_UPDATE:
-				querys, args = writer.processUpdateData(cmd, querys, args)
-
-			case gravity_sdk_types_record.Method_DELETE:
-				querys, args = writer.processDeleteData(cmd, querys, args)
-
-			}
-
-		}
-
-		// Write to batch
-		queryStr := strings.Join(querys, ";")
-
-		_, err := writer.db.Exec(queryStr, args...)
+	LOOP:
+		tx, err := writer.db.Beginx()
 		if err != nil {
 			log.Error(err)
-			log.Error(queryStr)
+			tx.Rollback()
+
+			<-time.After(time.Second * 5)
+
+			log.WithFields(log.Fields{}).Warn("Retry to write record to database by batch ...")
+			continue
+		}
+
+		for _, cmd := range dbCommands {
+			_, err := tx.NamedExec(cmd.QueryStr, cmd.Args)
+			if err != nil {
+				log.Error(err)
+				tx.Rollback()
+				<-time.After(time.Second * 5)
+				goto LOOP
+
+			}
+		}
+		err = tx.Commit()
+
+		if err != nil {
+			log.Error(err)
+			tx.Rollback()
 
 			<-time.After(time.Second * 5)
 
