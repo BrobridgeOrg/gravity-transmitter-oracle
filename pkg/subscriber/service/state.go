@@ -8,7 +8,7 @@ import (
 
 func (subscriber *Subscriber) InitStateStore() error {
 
-	storePath := viper.GetString("subscriber.state_store")
+	storePath := viper.GetString("subscriber.stateStore")
 	log.WithFields(log.Fields{
 		"path": storePath,
 	}).Info("Loading state...")

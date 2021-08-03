@@ -147,14 +147,14 @@ func (subscriber *Subscriber) Init() error {
 	}).Info("Initializing gravity subscriber")
 
 	// Initializing gravity subscriber and connecting to server
-	viper.SetDefault("subscriber.worker_count", 4)
+	viper.SetDefault("subscriber.workerCount", 4)
 	options := gravity_subscriber.NewOptions()
 	options.Verbose = viper.GetBool("subscriber.verbose")
 	options.Domain = domain
 	options.StateStore = subscriber.stateStore
-	options.WorkerCount = viper.GetInt("subscriber.worker_count")
-	options.InitialLoad.Enabled = viper.GetBool("initial_load.enabled")
-	options.InitialLoad.OmittedCount = viper.GetUint64("initial_load.omitted_count")
+	options.WorkerCount = viper.GetInt("subscriber.workerCount")
+	options.InitialLoad.Enabled = viper.GetBool("initialLoad.enabled")
+	options.InitialLoad.OmittedCount = viper.GetUint64("initialLoad.omittedCount")
 
 	// Loading access key
 	viper.SetDefault("subscriber.appID", "anonymous")
@@ -174,8 +174,8 @@ func (subscriber *Subscriber) Init() error {
 
 	// Register subscriber
 	log.Info("Registering subscriber")
-	subscriberID := viper.GetString("subscriber.subscriber_id")
-	subscriberName := viper.GetString("subscriber.subscriber_name")
+	subscriberID := viper.GetString("subscriber.subscriberID")
+	subscriberName := viper.GetString("subscriber.subscriberName")
 	err = subscriber.subscriber.Register(gravity_subscriber.SubscriberType_Transmitter, "oracle", subscriberID, subscriberName)
 	if err != nil {
 		return err
@@ -200,11 +200,11 @@ func (subscriber *Subscriber) initializePipelines() error {
 
 	// Subscribe to pipelines
 	log.WithFields(log.Fields{}).Info("Subscribing to gravity pipelines...")
-	viper.SetDefault("subscriber.pipeline_start", 0)
-	viper.SetDefault("subscriber.pipeline_end", -1)
+	viper.SetDefault("subscriber.pipelineStart", 0)
+	viper.SetDefault("subscriber.pipelineEnd", -1)
 
-	pipelineStart := viper.GetInt64("subscriber.pipeline_start")
-	pipelineEnd := viper.GetInt64("subscriber.pipeline_end")
+	pipelineStart := viper.GetInt64("subscriber.pipelineStart")
+	pipelineEnd := viper.GetInt64("subscriber.pipelineEnd")
 
 	// Subscribe to all pipelines
 	if pipelineStart == 0 && pipelineEnd == -1 {
@@ -218,12 +218,12 @@ func (subscriber *Subscriber) initializePipelines() error {
 
 	// Subscribe to pipelines in then range
 	if pipelineStart < 0 {
-		return fmt.Errorf("subscriber.pipeline_start should be higher than -1")
+		return fmt.Errorf("subscriber.pipelineStart should be higher than -1")
 	}
 
 	if pipelineStart > pipelineEnd {
 		if pipelineEnd != -1 {
-			return fmt.Errorf("subscriber.pipeline_start should be less than subscriber.pipeline_end")
+			return fmt.Errorf("subscriber.pipelineStart should be less than subscriber.pipelineEnd")
 		}
 	}
 

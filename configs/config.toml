@@ -3,21 +3,21 @@ domain = "gravity"
 host = "0.0.0.0:32803"
 
 [subscriber]
-subscriber_id = "oracle_transmitter"
-subscriber_name = "Oracle Transmitter"
-state_store = "./statestore"
-worker_count = 4
+subscriberID = "oracle_transmitter"
+subscriberName = "Oracle Transmitter"
+stateStore = "./statestore"
+workerCount = 4
 verbose = true
-pipeline_start = 0
-pipeline_end = -1
+pipelineStart = 0
+pipelineEnd = -1
 
 # Authentication
 appID = "anonymous"
 accessKey = ""
 
-[initial_load]
+[initialLoad]
 enabled = true
-omitted_count = 100000
+omittedCount = 100000
 
 
 
@@ -30,7 +30,7 @@ port = 1521
 username = "gravity"
 password = "gravity"
 # Only one of service_name or sid can be used
-service_name = "orcl"
+serviceName = "orcl"
 sid = ""
 # param = "PROTOCAL=TCP&as=sysdba"
 param = ""
