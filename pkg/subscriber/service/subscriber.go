@@ -277,7 +277,7 @@ func (subscriber *Subscriber) snapshotHandler(msg *gravity_subscriber.Message) {
 	// Prepare record for database writer
 	var record gravity_sdk_types_record.Record
 	record.Method = gravity_sdk_types_record.Method_INSERT
-	err = gravity_sdk_types_record.UnmarshalMapData(snapshotRecord.Payload, &record)
+	err = gravity_sdk_types_record.UnmarshalMapData(snapshotRecord.Payload.AsMap(), &record)
 	if err != nil {
 		log.Error(err)
 		return
