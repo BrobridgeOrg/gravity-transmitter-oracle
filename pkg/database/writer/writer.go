@@ -48,7 +48,7 @@ func NewWriter() *Writer {
 
 	// Initializing buffered input
 	opts := buffered_input.NewOptions()
-	opts.ChunkSize = 2000
+	opts.ChunkSize = 1000
 	opts.ChunkCount = 10000
 	opts.Timeout = 50 * time.Millisecond
 	opts.Handler = writer.chunkHandler

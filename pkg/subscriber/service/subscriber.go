@@ -5,27 +5,18 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"sync"
 
 	"github.com/BrobridgeOrg/gravity-sdk/core"
 	"github.com/BrobridgeOrg/gravity-sdk/core/keyring"
 	gravity_subscriber "github.com/BrobridgeOrg/gravity-sdk/subscriber"
 	gravity_state_store "github.com/BrobridgeOrg/gravity-sdk/subscriber/state_store"
-	gravity_sdk_types_projection "github.com/BrobridgeOrg/gravity-sdk/types/projection"
 	gravity_sdk_types_record "github.com/BrobridgeOrg/gravity-sdk/types/record"
-	gravity_sdk_types_snapshot_record "github.com/BrobridgeOrg/gravity-sdk/types/snapshot_record"
 	"github.com/BrobridgeOrg/gravity-transmitter-oracle/pkg/app"
 	"github.com/BrobridgeOrg/gravity-transmitter-oracle/pkg/database"
 	"github.com/jinzhu/copier"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
-
-var projectionPool = sync.Pool{
-	New: func() interface{} {
-		return &gravity_sdk_types_projection.Projection{}
-	},
-}
 
 type Subscriber struct {
 	app        app.App
@@ -42,14 +33,8 @@ func NewSubscriber(a app.App) *Subscriber {
 
 func (subscriber *Subscriber) processData(msg *gravity_subscriber.Message) error {
 
-	pj := projectionPool.Get().(*gravity_sdk_types_projection.Projection)
-	defer projectionPool.Put(pj)
-
-	// Parsing data
-	err := gravity_sdk_types_projection.Unmarshal(msg.Event.Data, pj)
-	if err != nil {
-		return err
-	}
+	event := msg.Payload.(*gravity_subscriber.DataEvent)
+	pj := event.Payload
 
 	// Getting tables for specific collection
 	tables, ok := subscriber.ruleConfig.Subscriptions[pj.Collection]
@@ -260,16 +245,11 @@ func (subscriber *Subscriber) eventHandler(msg *gravity_subscriber.Message) {
 
 func (subscriber *Subscriber) snapshotHandler(msg *gravity_subscriber.Message) {
 
-	// Parsing snapshot record
-	var snapshotRecord gravity_sdk_types_snapshot_record.SnapshotRecord
-	err := gravity_sdk_types_snapshot_record.Unmarshal(msg.Snapshot.Data, &snapshotRecord)
-	if err != nil {
-		log.Error(err)
-		return
-	}
+	event := msg.Payload.(*gravity_subscriber.SnapshotEvent)
+	snapshotRecord := event.Payload
 
 	// Getting tables for specific collection
-	tables, ok := subscriber.ruleConfig.Subscriptions[msg.Snapshot.Collection]
+	tables, ok := subscriber.ruleConfig.Subscriptions[event.Collection]
 	if !ok {
 		return
 	}
@@ -277,7 +257,7 @@ func (subscriber *Subscriber) snapshotHandler(msg *gravity_subscriber.Message) {
 	// Prepare record for database writer
 	var record gravity_sdk_types_record.Record
 	record.Method = gravity_sdk_types_record.Method_INSERT
-	err = gravity_sdk_types_record.UnmarshalMapData(snapshotRecord.Payload.AsMap(), &record)
+	err := gravity_sdk_types_record.UnmarshalMapData(snapshotRecord.Payload.AsMap(), &record)
 	if err != nil {
 		log.Error(err)
 		return
