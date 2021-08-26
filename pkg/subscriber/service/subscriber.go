@@ -133,11 +133,13 @@ func (subscriber *Subscriber) Init() error {
 
 	// Initializing gravity subscriber and connecting to server
 	viper.SetDefault("subscriber.workerCount", 4)
+	viper.SetDefault("subscriber.chunkSize", 2048)
 	options := gravity_subscriber.NewOptions()
 	options.Verbose = viper.GetBool("subscriber.verbose")
 	options.Domain = domain
 	options.StateStore = subscriber.stateStore
 	options.WorkerCount = viper.GetInt("subscriber.workerCount")
+	options.ChunkSize = viper.GetInt("subscriber.chunkSize")
 	options.InitialLoad.Enabled = viper.GetBool("initialLoad.enabled")
 	options.InitialLoad.OmittedCount = viper.GetUint64("initialLoad.omittedCount")
 
