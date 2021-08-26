@@ -152,7 +152,11 @@ func (writer *Writer) processData(dbCommands []*DBCommand) {
 		for _, cmd := range dbCommands {
 			_, err := tx.NamedExec(cmd.QueryStr, cmd.Args)
 			if err != nil {
-				log.Error(err)
+				log.WithFields(log.Fields{
+					"pkey_field": cmd.Record.PrimaryKey,
+				}).Error(err)
+				log.Error(cmd.QueryStr)
+				log.Error(cmd.Args)
 				tx.Rollback()
 				<-time.After(time.Second * 5)
 				goto LOOP
