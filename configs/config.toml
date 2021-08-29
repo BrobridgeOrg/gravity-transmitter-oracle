@@ -20,6 +20,10 @@ accessKey = ""
 enabled = true
 omittedCount = 100000
 
+[bufferInput]
+chunkSize = 1000
+timeout = 50
+#unit: millisecond
 
 
 [rules]

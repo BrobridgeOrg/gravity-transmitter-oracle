@@ -48,9 +48,9 @@ func NewWriter() *Writer {
 
 	// Initializing buffered input
 	opts := buffered_input.NewOptions()
-	opts.ChunkSize = 1000
+	opts.ChunkSize = viper.GetInt("bufferInput.chunkSize")
 	opts.ChunkCount = 10000
-	opts.Timeout = 50 * time.Millisecond
+	opts.Timeout = viper.GetDuration("bufferInput.timeout") * time.Millisecond
 	opts.Handler = writer.chunkHandler
 	writer.buffer = buffered_input.NewBufferedInput(opts)
 
