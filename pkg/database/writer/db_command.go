@@ -1,6 +1,15 @@
 package writer
 
-import gravity_sdk_types_record "github.com/BrobridgeOrg/gravity-sdk/types/record"
+import (
+	gravity_sdk_types_record "github.com/BrobridgeOrg/gravity-sdk/types/record"
+	"sync"
+)
+
+var dbCommandPool = sync.Pool{
+	New: func() interface{} {
+		return &DBCommand{}
+	},
+}
 
 type DBCommand struct {
 	PipelineID uint64
@@ -9,6 +18,7 @@ type DBCommand struct {
 	Record     *gravity_sdk_types_record.Record
 	QueryStr   string
 	Args       map[string]interface{}
+	RecordDef  *gravity_sdk_types_record.RecordDef
 }
 
 func (cmd *DBCommand) GetReference() interface{} {
