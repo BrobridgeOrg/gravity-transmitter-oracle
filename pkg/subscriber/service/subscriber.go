@@ -19,15 +19,17 @@ import (
 )
 
 type Subscriber struct {
-	app        app.App
-	stateStore *gravity_state_store.StateStore
-	subscriber *gravity_subscriber.Subscriber
-	ruleConfig *RuleConfig
+	app               app.App
+	stateStore        *gravity_state_store.StateStore
+	subscriber        *gravity_subscriber.Subscriber
+	ruleConfig        *RuleConfig
+	completionCounter map[*gravity_subscriber.Message]int
 }
 
 func NewSubscriber(a app.App) *Subscriber {
 	return &Subscriber{
-		app: a,
+		app:               a,
+		completionCounter: make(map[*gravity_subscriber.Message]int),
 	}
 }
 
@@ -60,7 +62,7 @@ func (subscriber *Subscriber) processData(msg *gravity_subscriber.Message) error
 
 		// TODO: using batch mechanism to improve performance
 		for {
-			err := writer.ProcessData(msg, &rs)
+			err := writer.ProcessData(msg, &rs, tables)
 			if err == nil {
 				break
 			}
@@ -119,7 +121,14 @@ func (subscriber *Subscriber) Init() error {
 		// Ack after writing to database
 		ref := cmd.GetReference()
 		msg := ref.(*gravity_subscriber.Message)
-		msg.Ack()
+
+		tables := cmd.GetTables()
+
+		subscriber.completionCounter[msg] += 1
+		if subscriber.completionCounter[msg] == len(tables) {
+			delete(subscriber.completionCounter, msg)
+			msg.Ack()
+		}
 	})
 
 	// Initializing gravity node information
@@ -274,7 +283,7 @@ func (subscriber *Subscriber) snapshotHandler(msg *gravity_subscriber.Message) {
 
 		// TODO: using batch mechanism to improve performance
 		for {
-			err := writer.ProcessData(msg, &rs)
+			err := writer.ProcessData(msg, &rs, tables)
 			if err == nil {
 				break
 			}

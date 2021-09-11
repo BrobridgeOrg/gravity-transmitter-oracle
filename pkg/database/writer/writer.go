@@ -224,15 +224,15 @@ func (writer *Writer) SetCompletionHandler(fn database.CompletionHandler) {
 	writer.completionHandler = fn
 }
 
-func (writer *Writer) ProcessData(reference interface{}, record *gravity_sdk_types_record.Record) error {
+func (writer *Writer) ProcessData(reference interface{}, record *gravity_sdk_types_record.Record, tables []string) error {
 
 	switch record.Method {
 	case gravity_sdk_types_record.Method_DELETE:
-		return writer.DeleteRecord(reference, record)
+		return writer.DeleteRecord(reference, record, tables)
 	case gravity_sdk_types_record.Method_UPDATE:
-		return writer.UpdateRecord(reference, record)
+		return writer.UpdateRecord(reference, record, tables)
 	case gravity_sdk_types_record.Method_INSERT:
-		return writer.InsertRecord(reference, record)
+		return writer.InsertRecord(reference, record, tables)
 	}
 
 	return nil
@@ -282,17 +282,17 @@ func (writer *Writer) GetDefinition(record *gravity_sdk_types_record.Record) (*g
 	return recordDef, nil
 }
 
-func (writer *Writer) InsertRecord(reference interface{}, record *gravity_sdk_types_record.Record) error {
+func (writer *Writer) InsertRecord(reference interface{}, record *gravity_sdk_types_record.Record, tables []string) error {
 
 	recordDef, err := writer.GetDefinition(record)
 	if err != nil {
 		return err
 	}
 
-	return writer.insert(reference, record, record.Table, recordDef)
+	return writer.insert(reference, record, record.Table, recordDef, tables)
 }
 
-func (writer *Writer) UpdateRecord(reference interface{}, record *gravity_sdk_types_record.Record) error {
+func (writer *Writer) UpdateRecord(reference interface{}, record *gravity_sdk_types_record.Record, tables []string) error {
 
 	recordDef, err := writer.GetDefinition(record)
 	if err != nil {
@@ -304,7 +304,7 @@ func (writer *Writer) UpdateRecord(reference interface{}, record *gravity_sdk_ty
 		return nil
 	}
 
-	_, err = writer.update(reference, record, record.Table, recordDef)
+	_, err = writer.update(reference, record, record.Table, recordDef, tables)
 	if err != nil {
 		return err
 	}
@@ -312,7 +312,7 @@ func (writer *Writer) UpdateRecord(reference interface{}, record *gravity_sdk_ty
 	return nil
 }
 
-func (writer *Writer) DeleteRecord(reference interface{}, record *gravity_sdk_types_record.Record) error {
+func (writer *Writer) DeleteRecord(reference interface{}, record *gravity_sdk_types_record.Record, tables []string) error {
 
 	if record.PrimaryKey == "" {
 		// Do nothing
@@ -336,6 +336,7 @@ func (writer *Writer) DeleteRecord(reference interface{}, record *gravity_sdk_ty
 			dbCommand.Args = map[string]interface{}{
 				"primary_val": value,
 			}
+			dbCommand.Tables = tables
 
 			writer.commands <- dbCommand
 
@@ -346,7 +347,7 @@ func (writer *Writer) DeleteRecord(reference interface{}, record *gravity_sdk_ty
 	return nil
 }
 
-func (writer *Writer) update(reference interface{}, record *gravity_sdk_types_record.Record, table string, recordDef *gravity_sdk_types_record.RecordDef) (bool, error) {
+func (writer *Writer) update(reference interface{}, record *gravity_sdk_types_record.Record, table string, recordDef *gravity_sdk_types_record.RecordDef, tables []string) (bool, error) {
 
 	// Preparing SQL string
 	updates := make([]string, 0, len(recordDef.ColumnDefs))
@@ -363,13 +364,14 @@ func (writer *Writer) update(reference interface{}, record *gravity_sdk_types_re
 	dbCommand.QueryStr = sqlStr
 	dbCommand.Args = recordDef.Values
 	dbCommand.RecordDef = recordDef
+	dbCommand.Tables = tables
 
 	writer.commands <- dbCommand
 
 	return false, nil
 }
 
-func (writer *Writer) insert(reference interface{}, record *gravity_sdk_types_record.Record, table string, recordDef *gravity_sdk_types_record.RecordDef) error {
+func (writer *Writer) insert(reference interface{}, record *gravity_sdk_types_record.Record, table string, recordDef *gravity_sdk_types_record.RecordDef, tables []string) error {
 
 	paramLength := len(recordDef.ColumnDefs)
 	if recordDef.HasPrimary {
@@ -403,6 +405,7 @@ func (writer *Writer) insert(reference interface{}, record *gravity_sdk_types_re
 	dbCommand.QueryStr = insertStr
 	dbCommand.Args = recordDef.Values
 	dbCommand.RecordDef = recordDef
+	dbCommand.Tables = tables
 
 	writer.commands <- dbCommand
 
