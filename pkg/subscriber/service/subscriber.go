@@ -36,22 +36,16 @@ func NewSubscriber(a app.App) *Subscriber {
 func (subscriber *Subscriber) processData(msg *gravity_subscriber.Message) error {
 
 	event := msg.Payload.(*gravity_subscriber.DataEvent)
-	pj := event.Payload
+	record := event.Payload
 
 	// Getting tables for specific collection
-	tables, ok := subscriber.ruleConfig.Subscriptions[pj.Collection]
+	tables, ok := subscriber.ruleConfig.Subscriptions[record.Table]
 	if !ok {
 		// skip
 		return nil
 	}
 
 	//	log.Info(string(msg.Event.Data))
-
-	// Convert projection to record
-	record, err := pj.ToRecord()
-	if err != nil {
-		return err
-	}
 
 	// Save record to each table
 	writer := subscriber.app.GetWriter()
@@ -268,11 +262,7 @@ func (subscriber *Subscriber) snapshotHandler(msg *gravity_subscriber.Message) {
 	// Prepare record for database writer
 	var record gravity_sdk_types_record.Record
 	record.Method = gravity_sdk_types_record.Method_INSERT
-	err := gravity_sdk_types_record.UnmarshalMapData(snapshotRecord.Payload.AsMap(), &record)
-	if err != nil {
-		log.Error(err)
-		return
-	}
+	record.Fields = snapshotRecord.Payload.Map.Fields
 
 	// Save record to each table
 	writer := subscriber.app.GetWriter()
